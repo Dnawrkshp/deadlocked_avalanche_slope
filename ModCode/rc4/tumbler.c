@@ -5,7 +5,10 @@
 #include <libdl/math3d.h>
 #include <libdl/math.h>
 #include <libdl/graphics.h>
+#include <libdl/random.h>
 #include "tumbler.h"
+#include "game.h"
+#include "moby_bounds.h"
 
 #define TUMBLER_GRAVITY                 (22.0f)
 #define TUMBLER_LIFETIME_TICKS          (60 * 60)
@@ -23,7 +26,7 @@
 
 #define TUMBLER_LINEAR_DAMPING          (0.18f)
 #define TUMBLER_ANGULAR_DAMPING         (0.28f)
-#define TUMBLER_MAX_LINEAR_SPEED        (40.0f)
+#define TUMBLER_MAX_LINEAR_SPEED        (60.0f)
 #define TUMBLER_MAX_ANGULAR_SPEED       (18.0f)
 #define TUMBLER_REST_PROBE_LENGTH       (0.05f)
 #define TUMBLER_MIN_SWEEP_LENGTH        (0.02f)
@@ -32,6 +35,7 @@ struct TumblerPVar
 {
 	VECTOR Velocity;
 	VECTOR AngularVelocity;
+	VECTOR Force;
 	VECTOR Orientation;
 	VECTOR ColliderHalfExtents;
 	VECTOR ColliderOffset;
@@ -46,6 +50,11 @@ struct TumblerPVar
 struct TumblerDefinition
 {
 	int OClass;
+	int Bangles;
+	float Chance;
+	float MassMultiplier;
+	float ForceMultiplier;
+	float Scale;
 	VECTOR ColliderOffset;
 	VECTOR ColliderHalfExtents;
 };
@@ -57,25 +66,146 @@ struct TumblerContact
 	VECTOR ProbePoint;
 };
 
-static struct TumblerDefinition TumblerDefinitions[] =
+struct TumblerDefinition TumblerDefinitions[] =
 {
-	{
-		MOBY_ID_BETA_BOX,
-		{ 0.0f, 0.0f, 0.5f, 0.0f },
-		{ 0.5f, 0.5f, 0.5f, 0.0f }
-	}
+	{ // tall brown rock
+		.OClass = 6739,
+		.Chance = 1.0f,
+		.MassMultiplier = 3.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // brown destructible box
+		.OClass = 7558,
+		.Chance = 1.0f,
+		.MassMultiplier = 4.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // destructible barrier
+		.OClass = 8307,
+		.Chance = 1.0f,
+		.MassMultiplier = 2.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // transport ship
+		.OClass = 8330,
+		.Chance = 1.0f,
+		.MassMultiplier = 5.0f,
+		.ForceMultiplier = 0.5f,
+	},
+	{ // enemy crate drop spawner
+		.OClass = 8359,
+		.Chance = 1.0f,
+		.MassMultiplier = 2.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // tv
+		.OClass = 9277,
+		.Chance = 1.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // camera
+		.OClass = 9258,
+		.Chance = 1.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // dreadzone
+		.OClass = 9451,
+		.Chance = 1.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // ice cube -- no collision :/
+		.OClass = 9479,
+		.Chance = 0.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // escape pod
+		.OClass = 9581,
+		.Chance = 1.0f,
+		.MassMultiplier = 3.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // ghost ship
+		.OClass = 9817,
+		.Chance = 1.0f,
+		.MassMultiplier = 3.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // asteroid 1
+		.OClass = 9908,
+		.Chance = 0.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // asteroid 2
+		.OClass = 9909,
+		.Chance = 0.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // ghost station container
+		.OClass = 10011,
+		.Chance = 0.0f,
+		.MassMultiplier = 2.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // cylinder barricade
+		.OClass = 9785,
+		.Chance = 1.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // dreadzone mine
+		.OClass = 9276,
+		.Chance = 1.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // landstalker score orb 1
+		.OClass = 8521,
+		.Chance = 0.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // landstalker score orb 2
+		.OClass = 8522,
+		.Chance = 0.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // landstalker score orb 3
+		.OClass = 8524,
+		.Chance = 0.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
+	{ // landstalker score orb 4
+		.OClass = 8525,
+		.Chance = 0.0f,
+		.MassMultiplier = 1.0f,
+		.ForceMultiplier = 1.0f,
+	},
 };
 
-#define TUMBLER_DEFINITION_COUNT        (sizeof(TumblerDefinitions) / sizeof(TumblerDefinitions[0]))
+#define TUMBLER_DEFINITION_COUNT        (COUNT_OF(TumblerDefinitions))
 
 //--------------------------------------------------------------------------
-static void tumblerVectorZero(VECTOR v)
+int mobyIsTumbler(Moby* moby)
+{
+  return moby && moby->Bolts == -123;
+}
+
+//--------------------------------------------------------------------------
+void tumblerVectorZero(VECTOR v)
 {
 	vector_write(v, 0);
 }
 
 //--------------------------------------------------------------------------
-static void tumblerVectorSet(VECTOR v, float x, float y, float z)
+void tumblerVectorSet(VECTOR v, float x, float y, float z)
 {
 	v[0] = x;
 	v[1] = y;
@@ -84,7 +214,7 @@ static void tumblerVectorSet(VECTOR v, float x, float y, float z)
 }
 
 //--------------------------------------------------------------------------
-static struct TumblerDefinition *tumblerGetDefinition(int oClass)
+struct TumblerDefinition *tumblerGetDefinition(int oClass)
 {
 	u32 i;
 
@@ -98,7 +228,57 @@ static struct TumblerDefinition *tumblerGetDefinition(int oClass)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerClampVectorLength(VECTOR v, float maxLength)
+int tumblerGetDefinitionCount(void)
+{
+	return (int)TUMBLER_DEFINITION_COUNT;
+}
+
+//--------------------------------------------------------------------------
+int tumblerGetDefinitionOClass(int index)
+{
+	if (index < 0 || index >= (int)TUMBLER_DEFINITION_COUNT)
+		return TumblerDefinitions[0].OClass;
+
+	return TumblerDefinitions[index].OClass;
+}
+
+//--------------------------------------------------------------------------
+int tumblerGetRandomOClass(void)
+{
+	float totalChance = 0.0f;
+	float pick;
+	u32 i;
+	int fallbackOClass = 0;
+
+	for (i = 0; i < TUMBLER_DEFINITION_COUNT; ++i)
+	{
+		if (TumblerDefinitions[i].Chance > 0.0f)
+		{
+			totalChance += TumblerDefinitions[i].Chance;
+			fallbackOClass = TumblerDefinitions[i].OClass;
+		}
+	}
+
+	if (totalChance <= 0.0f)
+		return 0;
+
+	pick = randRange(0.0f, totalChance);
+	for (i = 0; i < TUMBLER_DEFINITION_COUNT; ++i)
+	{
+		if (TumblerDefinitions[i].Chance <= 0.0f)
+			continue;
+
+		if (pick < TumblerDefinitions[i].Chance)
+			return TumblerDefinitions[i].OClass;
+
+		pick -= TumblerDefinitions[i].Chance;
+	}
+
+	return fallbackOClass;
+}
+
+//--------------------------------------------------------------------------
+void tumblerClampVectorLength(VECTOR v, float maxLength)
 {
 	float length = vector_length(v);
 	if (length > maxLength && length > 0.0f)
@@ -109,7 +289,7 @@ static void tumblerClampVectorLength(VECTOR v, float maxLength)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerApplyDamping(VECTOR v, float damping)
+void tumblerApplyDamping(VECTOR v, float damping)
 {
 	float scale = 1.0f - (damping * MATH_DT);
 	if (scale < 0.0f)
@@ -120,7 +300,7 @@ static void tumblerApplyDamping(VECTOR v, float damping)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerQuatSetIdentity(VECTOR q)
+void tumblerQuatSetIdentity(VECTOR q)
 {
 	q[0] = 0.0f;
 	q[1] = 0.0f;
@@ -129,7 +309,7 @@ static void tumblerQuatSetIdentity(VECTOR q)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerQuatMultiply(VECTOR out, VECTOR a, VECTOR b)
+void tumblerQuatMultiply(VECTOR out, VECTOR a, VECTOR b)
 {
 	VECTOR result;
 
@@ -142,7 +322,7 @@ static void tumblerQuatMultiply(VECTOR out, VECTOR a, VECTOR b)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerQuatToMatrix(VECTOR q, MATRIX out)
+void tumblerQuatToMatrix(VECTOR q, MATRIX out)
 {
 	VECTOR row0;
 	VECTOR row1;
@@ -171,7 +351,7 @@ static void tumblerQuatToMatrix(VECTOR q, MATRIX out)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerBuildEulerRotationMatrix(VECTOR rotation, MATRIX out)
+void tumblerBuildEulerRotationMatrix(VECTOR rotation, MATRIX out)
 {
 	matrix_unit(out);
 	matrix_rotate_x(out, out, rotation[0]);
@@ -180,7 +360,7 @@ static void tumblerBuildEulerRotationMatrix(VECTOR rotation, MATRIX out)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerBuildRotationMatrix(Moby *moby, MATRIX out)
+void tumblerBuildRotationMatrix(Moby *moby, MATRIX out)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 
@@ -188,7 +368,7 @@ static void tumblerBuildRotationMatrix(Moby *moby, MATRIX out)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerSyncMobyRotation(Moby *moby)
+void tumblerSyncMobyRotation(Moby *moby)
 {
 	MATRIX rot;
 
@@ -199,7 +379,7 @@ static void tumblerSyncMobyRotation(Moby *moby)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerIntegrateOrientation(Moby *moby)
+void tumblerIntegrateOrientation(Moby *moby)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	VECTOR axis;
@@ -220,7 +400,7 @@ static void tumblerIntegrateOrientation(Moby *moby)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerGetWorldColliderOffset(Moby *moby, VECTOR out)
+void tumblerGetWorldColliderOffset(Moby *moby, VECTOR out)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	MATRIX rot;
@@ -251,9 +431,10 @@ void tumblerSetPosition(Moby *moby, VECTOR position)
 }
 
 //--------------------------------------------------------------------------
-static int tumblerRaycast(Moby* moby, VECTOR from, VECTOR to, struct TumblerContact *out, VECTOR probePoint)
+int tumblerRaycast(Moby* moby, VECTOR from, VECTOR to, struct TumblerContact *out, VECTOR probePoint)
 {
-	int hit = CollLine_Fix(from, to, COLLISION_FLAG_IGNORE_DYNAMIC, moby, NULL);
+  // COLLISION_FLAG_IGNORE_DYNAMIC
+	int hit = CollLine_Fix(from, to, 0x0E | 0x2000, moby, NULL);
 
 	if (out && hit)
 	{
@@ -269,7 +450,7 @@ static int tumblerRaycast(Moby* moby, VECTOR from, VECTOR to, struct TumblerCont
 }
 
 //--------------------------------------------------------------------------
-static void tumblerApplyInverseInertiaWorld(Moby *moby, VECTOR worldVec, VECTOR out)
+void tumblerApplyInverseInertiaWorld(Moby *moby, VECTOR worldVec, VECTOR out)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	MATRIX rot;
@@ -293,7 +474,7 @@ static void tumblerApplyInverseInertiaWorld(Moby *moby, VECTOR worldVec, VECTOR 
 }
 
 //--------------------------------------------------------------------------
-static void tumblerGetWorldCorners(Moby *moby, VECTOR outCorners[8])
+void tumblerGetWorldCorners(Moby *moby, VECTOR outCorners[8])
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	MATRIX rot;
@@ -320,7 +501,7 @@ static void tumblerGetWorldCorners(Moby *moby, VECTOR outCorners[8])
 }
 
 //--------------------------------------------------------------------------
-static void tumblerApplyImpulse(Moby *moby, VECTOR r, VECTOR impulse)
+void tumblerApplyImpulse(Moby *moby, VECTOR r, VECTOR impulse)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	VECTOR linearChange;
@@ -339,7 +520,7 @@ static void tumblerApplyImpulse(Moby *moby, VECTOR r, VECTOR impulse)
 }
 
 //--------------------------------------------------------------------------
-static float tumblerComputeImpulseDenom(Moby *moby, VECTOR r, VECTOR normal)
+float tumblerComputeImpulseDenom(Moby *moby, VECTOR r, VECTOR normal)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	VECTOR rCrossN;
@@ -361,7 +542,7 @@ static float tumblerComputeImpulseDenom(Moby *moby, VECTOR r, VECTOR normal)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerResolveContact(Moby *moby, struct TumblerContact *contact)
+void tumblerResolveContact(Moby *moby, struct TumblerContact *contact)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	VECTOR center;
@@ -434,7 +615,7 @@ static void tumblerResolveContact(Moby *moby, struct TumblerContact *contact)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerCorrectContacts(Moby *moby, struct TumblerContact *contacts, int contactCount)
+void tumblerCorrectContacts(Moby *moby, struct TumblerContact *contacts, int contactCount)
 {
 	VECTOR center;
 	VECTOR toProbe;
@@ -475,7 +656,7 @@ static void tumblerCorrectContacts(Moby *moby, struct TumblerContact *contacts, 
 }
 
 //--------------------------------------------------------------------------
-static void tumblerRemoveRestingNormalVelocity(Moby *moby, VECTOR normal)
+void tumblerRemoveRestingNormalVelocity(Moby *moby, VECTOR normal)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	VECTOR normalVelocity;
@@ -490,7 +671,7 @@ static void tumblerRemoveRestingNormalVelocity(Moby *moby, VECTOR normal)
 }
 
 //--------------------------------------------------------------------------
-static int tumblerCollectContacts(Moby *moby, struct TumblerContact *contacts, int maxContacts, VECTOR outAverageNormal)
+int tumblerCollectContacts(Moby *moby, struct TumblerContact *contacts, int maxContacts, VECTOR outAverageNormal)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	VECTOR corners[8];
@@ -581,18 +762,26 @@ void tumblerDraw(Moby *moby)
 }
 
 //--------------------------------------------------------------------------
+void tumblerDebugDrawUpdate(Moby *moby)
+{
+	gfxRegisterDrawFunction((void**)0x0022251C, (gfxDrawFuncDef*)&tumblerDraw, moby);
+}
+
+//--------------------------------------------------------------------------
 void tumblerUpdate(Moby *moby)
 {
 	struct TumblerPVar *pvars = (struct TumblerPVar *)moby->PVar;
 	struct TumblerContact contacts[16];
 	VECTOR gravityStep;
+	VECTOR forceStep;
 	VECTOR averageNormal;
 	VECTOR center;
 	int contactCount;
 	int i;
 
 	--pvars->Lifeticks;
-	if (pvars->Lifeticks <= 0 || moby->Position[2] <= (gameGetDeathHeight() + 5))
+	tumblerGetPosition(moby, center);
+	if (pvars->Lifeticks <= 0 || moby->Position[2] <= (gameGetDeathHeight() + 1) || !gameIsPointInTumbleZone(center))
 	{
 		mobyDestroy(moby);
 		return;
@@ -604,6 +793,10 @@ void tumblerUpdate(Moby *moby)
 
 	tumblerVectorSet(gravityStep, 0.0f, 0.0f, -TUMBLER_GRAVITY * MATH_DT);
 	vector_add(pvars->Velocity, pvars->Velocity, gravityStep);
+	pvars->Velocity[3] = 0.0f;
+
+	vector_scale(forceStep, pvars->Force, MATH_DT);
+	vector_add(pvars->Velocity, pvars->Velocity, forceStep);
 	pvars->Velocity[3] = 0.0f;
 
 	contactCount = tumblerCollectContacts(moby, contacts, 16, averageNormal);
@@ -633,7 +826,7 @@ void tumblerUpdate(Moby *moby)
 }
 
 //--------------------------------------------------------------------------
-static void tumblerInitInertia(struct TumblerPVar *pvars)
+void tumblerInitInertia(struct TumblerPVar *pvars)
 {
 	float width = pvars->ColliderHalfExtents[0] * 2.0f;
 	float height = pvars->ColliderHalfExtents[1] * 2.0f;
@@ -648,13 +841,23 @@ static void tumblerInitInertia(struct TumblerPVar *pvars)
 }
 
 //--------------------------------------------------------------------------
-void tumblerSpawn(int oClass, VECTOR position, VECTOR rotation, float size, float mass, float restitution, float bounceImpulseScale, VECTOR velocity, VECTOR angularVelocity)
+void tumblerSpawnWithUpdate(struct TumblerSpawnArgs *args, void (*update)(Moby *))
 {
-	struct TumblerDefinition *definition = tumblerGetDefinition(oClass);
-	Moby *moby = mobySpawn(oClass, sizeof(struct TumblerPVar));
+	struct TumblerDefinition *definition;
+	Moby *moby;
 	struct TumblerPVar *pvars;
 	MATRIX rot;
-	float scale = clamp(size, TUMBLER_MIN_SCALE, TUMBLER_MAX_SCALE);
+	float scale;
+
+	if (!args)
+		return;
+
+	definition = tumblerGetDefinition(args->OClass);
+	if (definition->OClass != args->OClass || definition->Chance <= 0.0f)
+		return;
+
+	moby = mobySpawn(args->OClass, sizeof(struct TumblerPVar));
+	scale = clamp(args->Size, TUMBLER_MIN_SCALE, TUMBLER_MAX_SCALE);
 
 	if (!moby)
 		return;
@@ -662,10 +865,12 @@ void tumblerSpawn(int oClass, VECTOR position, VECTOR rotation, float size, floa
 	pvars = (struct TumblerPVar *)moby->PVar;
 	pvars->Lifeticks = TUMBLER_LIFETIME_TICKS;
 
-	vector_copy(pvars->Velocity, velocity);
+	vector_copy(pvars->Velocity, args->Velocity);
 	pvars->Velocity[3] = 0.0f;
-	vector_copy(pvars->AngularVelocity, angularVelocity);
+	vector_copy(pvars->AngularVelocity, args->AngularVelocity);
 	pvars->AngularVelocity[3] = 0.0f;
+	vector_scale(pvars->Force, args->Force, definition->ForceMultiplier);
+	pvars->Force[3] = 0.0f;
 	tumblerVectorSet(
 		pvars->ColliderHalfExtents,
 		definition->ColliderHalfExtents[0] * scale,
@@ -677,19 +882,20 @@ void tumblerSpawn(int oClass, VECTOR position, VECTOR rotation, float size, floa
 		definition->ColliderOffset[1] * scale,
 		definition->ColliderOffset[2] * scale);
 
-	pvars->Mass = mass;
+	pvars->Mass = args->Mass * definition->MassMultiplier;
 	pvars->InverseMass = pvars->Mass > 0.0f ? 1.0f / pvars->Mass : 0.0f;
-	pvars->Restitution = clamp(restitution, 0.0f, 1.0f);
-	pvars->BounceImpulseScale = clamp(bounceImpulseScale, TUMBLER_MIN_BOUNCE_IMPULSE_SCALE, TUMBLER_MAX_BOUNCE_IMPULSE_SCALE);
+	pvars->Restitution = clamp(args->Restitution, 0.0f, 1.0f);
+	pvars->BounceImpulseScale = clamp(args->BounceImpulseScale, TUMBLER_MIN_BOUNCE_IMPULSE_SCALE, TUMBLER_MAX_BOUNCE_IMPULSE_SCALE);
 	tumblerInitInertia(pvars);
 
-	moby->DrawDist = 255;
+	moby->DrawDist = 500;
 	moby->UpdateDist = 255;
 	moby->ModeBits = MOBY_MODE_BIT_HIDE_BACKFACES;
-	moby->Scale *= scale;
+	moby->Scale = scale * definition->Scale;
+	moby->Bangles = definition->Bangles;
   moby->Bolts = -123;
 
-	vector_copy(moby->Rotation, rotation);
+	vector_copy(moby->Rotation, args->Rotation);
 	moby->Rotation[3] = 0.0f;
 	tumblerBuildEulerRotationMatrix(moby->Rotation, rot);
 	quat_from_matrix(pvars->Orientation, rot);
@@ -697,16 +903,67 @@ void tumblerSpawn(int oClass, VECTOR position, VECTOR rotation, float size, floa
 	if (vector_length(pvars->Orientation) <= 0.0001f)
 		tumblerQuatSetIdentity(pvars->Orientation);
 	tumblerSyncMobyRotation(moby);
-	tumblerSetPosition(moby, position);
+	tumblerSetPosition(moby, args->Position);
 
-	moby->PUpdate = &tumblerUpdate;
+	moby->PUpdate = update;
 	mobyUpdateTransform(moby);
 
 	// printf("TUMBLER SPAWNED AT %08X\n", (u32)moby);
 }
 
 //--------------------------------------------------------------------------
-int mobyIsTumbler(Moby* moby)
+void tumblerSpawn(struct TumblerSpawnArgs *args)
 {
-  return moby && moby->Bolts == -123;
+	tumblerSpawnWithUpdate(args, &tumblerUpdate);
+}
+
+//--------------------------------------------------------------------------
+void tumblerSpawnDrawDebug(struct TumblerSpawnArgs *args)
+{
+	tumblerSpawnWithUpdate(args, &tumblerDebugDrawUpdate);
+}
+
+//--------------------------------------------------------------------------
+void tumblerInit(void)
+{
+	u32 i;
+
+	for (i = 0; i < TUMBLER_DEFINITION_COUNT; ++i)
+	{
+		struct TumblerDefinition *definition = &TumblerDefinitions[i];
+		Moby *moby = mobyFindNextByOClass(mobyListGetStart(), definition->OClass);
+		VECTOR colliderOffset;
+		VECTOR colliderHalfExtents;
+
+    // disabled
+    if (definition->Chance <= 0)
+      continue;
+
+		if (!moby || !mobyBoundsFromPClass(moby->PClass, moby->Scale, colliderOffset, colliderHalfExtents))
+		{
+			definition->Chance = 0.0f;
+			continue;
+		}
+
+    if (!moby->CollData)
+    {
+      printf("moby %04X %d has no collision\n", moby->OClass, moby->OClass);
+			definition->Chance = 0.0f;
+      continue;
+    }
+
+    definition->Scale = moby->Scale;
+    definition->Bangles = moby->Bangles;
+
+		tumblerVectorSet(
+			definition->ColliderHalfExtents,
+			colliderHalfExtents[0],
+			colliderHalfExtents[1],
+			colliderHalfExtents[2]);
+		tumblerVectorSet(
+			definition->ColliderOffset,
+			colliderOffset[0],
+			colliderOffset[1],
+			colliderOffset[2]);
+	}
 }

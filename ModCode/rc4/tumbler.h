@@ -5,8 +5,29 @@
 #include <libdl/game.h>
 #include <libdl/moby.h>
 
+//--------------------------------------------------------------------------
+struct TumblerSpawnArgs
+{
+	int OClass;
+	VECTOR Position;
+	VECTOR Rotation;
+	VECTOR Velocity;
+	VECTOR AngularVelocity;
+	VECTOR Force;
+	float Size;
+	float Mass;
+	float Restitution;
+	float BounceImpulseScale;
+};
+
+//--------------------------------------------------------------------------
 int mobyIsTumbler(Moby* moby);
-void tumblerSpawn(int oClass, VECTOR position, VECTOR rotation, float size, float mass, float restitution, float bounceImpulseScale, VECTOR velocity, VECTOR angularVelocity);
+int tumblerGetDefinitionCount(void);
+int tumblerGetDefinitionOClass(int index);
+int tumblerGetRandomOClass(void);
+void tumblerInit(void);
+void tumblerSpawn(struct TumblerSpawnArgs *args);
+void tumblerSpawnDrawDebug(struct TumblerSpawnArgs *args);
 void tumblerGetPosition(Moby *moby, VECTOR out);
 void tumblerSetPosition(Moby *moby, VECTOR position);
 

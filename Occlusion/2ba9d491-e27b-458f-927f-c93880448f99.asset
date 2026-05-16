@@ -12,4 +12,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a4a77ce0358ad614586b1f3f5717be2e, type: 3}
   m_Name: 2ba9d491-e27b-458f-927f-c93880448f99
   m_EditorClassIdentifier: 
-  Octants: []
+  Octants:
+  - {x: 456, y: 64, z: 544}
