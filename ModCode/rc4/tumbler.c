@@ -30,6 +30,8 @@
 #define TUMBLER_MAX_ANGULAR_SPEED       (18.0f)
 #define TUMBLER_REST_PROBE_LENGTH       (0.05f)
 #define TUMBLER_MIN_SWEEP_LENGTH        (0.02f)
+#define TUMBLER_CLIP_RECOVERY_PROBE_MIN_LENGTH (1.0f)
+#define TUMBLER_CLIP_RECOVERY_PROBE_PADDING    (0.5f)
 
 struct TumblerPVar
 {
@@ -679,10 +681,24 @@ int tumblerCollectContacts(Moby *moby, struct TumblerContact *contacts, int maxC
 	VECTOR from;
 	VECTOR to;
 	float sweepLength;
+	float recoveryProbeLength;
+	float lowestZ;
+	float secondLowestZ;
+	int lowestCornerIndex = -1;
+	int secondLowestCornerIndex = -1;
 	int contactCount = 0;
 	int i;
 
 	tumblerGetWorldCorners(moby, corners);
+	recoveryProbeLength = pvars->ColliderHalfExtents[0];
+	if (pvars->ColliderHalfExtents[1] > recoveryProbeLength)
+		recoveryProbeLength = pvars->ColliderHalfExtents[1];
+	if (pvars->ColliderHalfExtents[2] > recoveryProbeLength)
+		recoveryProbeLength = pvars->ColliderHalfExtents[2];
+	recoveryProbeLength = (recoveryProbeLength * 2.0f) + TUMBLER_CLIP_RECOVERY_PROBE_PADDING;
+	if (recoveryProbeLength < TUMBLER_CLIP_RECOVERY_PROBE_MIN_LENGTH)
+		recoveryProbeLength = TUMBLER_CLIP_RECOVERY_PROBE_MIN_LENGTH;
+
 	vector_scale(sweep, pvars->Velocity, MATH_DT);
 	if (sweep[2] < 0.0f)
 		sweep[2] -= TUMBLER_CONTACT_SKIN;
@@ -697,6 +713,43 @@ int tumblerCollectContacts(Moby *moby, struct TumblerContact *contacts, int maxC
 	}
 
 	tumblerVectorZero(outAverageNormal);
+
+	lowestZ = 100000000.0f;
+	secondLowestZ = 100000000.0f;
+	for (i = 0; i < 8; ++i)
+	{
+		if (corners[i][2] < lowestZ)
+		{
+			secondLowestZ = lowestZ;
+			secondLowestCornerIndex = lowestCornerIndex;
+			lowestZ = corners[i][2];
+			lowestCornerIndex = i;
+		}
+		else if (corners[i][2] < secondLowestZ)
+		{
+			secondLowestZ = corners[i][2];
+			secondLowestCornerIndex = i;
+		}
+	}
+
+	for (i = 0; i < 2 && contactCount < maxContacts; ++i)
+	{
+		int cornerIndex = i == 0 ? lowestCornerIndex : secondLowestCornerIndex;
+		if (cornerIndex < 0)
+			continue;
+
+		vector_copy(from, corners[cornerIndex]);
+		from[2] += recoveryProbeLength;
+		from[3] = 0.0f;
+		vector_copy(to, corners[cornerIndex]);
+
+		if (tumblerRaycast(moby, from, to, &contacts[contactCount], corners[cornerIndex]))
+		{
+			vector_add(outAverageNormal, outAverageNormal, contacts[contactCount].HitNormal);
+			outAverageNormal[3] = 0.0f;
+			++contactCount;
+		}
+	}
 
 	for (i = 0; i < 8 && contactCount < maxContacts; ++i)
 	{
@@ -888,9 +941,9 @@ void tumblerSpawnWithUpdate(struct TumblerSpawnArgs *args, void (*update)(Moby *
 	pvars->BounceImpulseScale = clamp(args->BounceImpulseScale, TUMBLER_MIN_BOUNCE_IMPULSE_SCALE, TUMBLER_MAX_BOUNCE_IMPULSE_SCALE);
 	tumblerInitInertia(pvars);
 
-	moby->DrawDist = 500;
+	moby->DrawDist = 160;
 	moby->UpdateDist = 255;
-	moby->ModeBits = MOBY_MODE_BIT_HIDE_BACKFACES;
+	moby->ModeBits = MOBY_MODE_BIT_HAS_GLOW;
 	moby->Scale = scale * definition->Scale;
 	moby->Bangles = definition->Bangles;
   moby->Bolts = -123;

@@ -99,13 +99,13 @@ void updatePlayerScores(void)
     float score = p->PlayerPosition[2] - baseHeight;
     float currScore = cgmScoreGetCustomPlayerFloatStat(i, CSTAT_DISTANCE_UP);
     float newScore = clamp(maxf(score, currScore), 0, cgmScoreTarget.CustomTarget / SCORE_FLOAT_PRECISION);
-    cgmScoreSetCustomPlayerFloatStat(i, CSTAT_DISTANCE_UP, newScore);
-    cgmScoreSetCustomPlayerFloatStat(i, CSTAT_DISTANCE_FORWARD, maxf(forward, cgmScoreGetCustomPlayerFloatStat(i, CSTAT_DISTANCE_FORWARD)));
+    cgmScoreSetCustomPlayerFloatStat(i, CSTAT_DISTANCE_UP, newScore, 0);
+    cgmScoreSetCustomPlayerFloatStat(i, CSTAT_DISTANCE_FORWARD, maxf(forward, cgmScoreGetCustomPlayerFloatStat(i, CSTAT_DISTANCE_FORWARD)), 0);
 
     // check if reached end
     if (cgmScoreGetCustomPlayerIntStat(i, CSTAT_DISTANCE_UP) >= cgmScoreGetTargetScore())
     {
-      cgmScoreSetCustomPlayerIntStat(i, CSTAT_COMPLETE_TIME, State.GameTicks / 60.0f);
+      cgmScoreSetCustomPlayerIntStat(i, CSTAT_COMPLETE_TIME, State.GameTicks / 60.0f, 0);
     }
   }
 
